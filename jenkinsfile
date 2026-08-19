@@ -2,13 +2,13 @@ pipeline {
     agent any
     environment {
         NETLIFY_SITE_ID = '0d97e93b-26d3-48ac-9ad2-ca7b79085fee'
-        NETLIFY_AUTH_TOKE = credentials('netlify-token')
+        NETLIFY_AUTH_TOKEN = credentials('netlify-token')
     }
     stages {
         stage('Build') {
             agent {
                 docker {
-                    image 'node:18-alpine'
+                    image 'node:22-alpine'
                     reuseNode true
                 }
             }
@@ -30,7 +30,7 @@ pipeline {
                  stage('Unit Test') {
             agent {
                 docker {
-                    image 'node:20-alpine'
+                    image 'node:22-alpine'
                     reuseNode true
                 }
             }
@@ -78,7 +78,7 @@ pipeline {
          stage('Deploy') {
             agent {
                 docker {
-                    image 'node:20-alpine'
+                    image 'node:22-alpine'
                     reuseNode true
                 }
             }
@@ -88,6 +88,7 @@ pipeline {
                     node_modules/.bin/netlify --version
                     echo "deploy to prodction Site ID : $NETLIFY_SITE_ID"
                     node_modules/.bin/netlify status
+                    #node_modules/.bin/netlify deploy --dir=build --prod
                 '''
             }
         }
