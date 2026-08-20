@@ -3,7 +3,6 @@ pipeline {
     environment {
         NETLIFY_SITE_ID = '0d97e93b-26d3-48ac-9ad2-ca7b79085fee'
         NETLIFY_AUTH_TOKEN = credentials('netlify-token')
-        CI_ENVIRONMENT_URL = 'https://resonant-platypus-d2e3db.netlify.app/'
     }
     stages {
         stage('Build') {
@@ -58,6 +57,7 @@ pipeline {
             }
 
             steps {
+                echo "check E2E"
                 sh '''
                 npm install serve
                 node_modules/.bin/serve -s build &
@@ -67,7 +67,7 @@ pipeline {
             }
              post {
             always{
-                publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, icon: '', keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Playwright Local HTML Report', reportTitles: '', useWrapperFileDirectly: true])
+                publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, icon: '', keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Playwright HTML Report', reportTitles: '', useWrapperFileDirectly: true])
             }
         }
 
@@ -99,26 +99,28 @@ pipeline {
         '''
     }
 }
-
-     stage("Prod E2E"){
+    stage("Prod E2E"){
             agent{
                 docker{
                     image 'mcr.microsoft.com/playwright:v1.62.0-noble'
                     reuseNode true
                 }
             }
-                environment {
-                    CI_ENVIRONMENT_URL = 'https://resonant-platypus-d2e3db.netlify.app'
-                }
+
+             environment {
+                CI_ENVIRONMENT_URL = 'https://resonant-platypus-d2e3db.netlify.app/'
+            }
+
 
             steps {
+                echo "check Prod E2E"
                 sh '''
                 npx playwright test  --reporter=html
                 '''
             }
              post {
             always{
-                publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, icon: '', keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Playwright E2E HTML Report', reportTitles: '', useWrapperFileDirectly: true])
+                publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, icon: '', keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Playwright Prod HTML Report', reportTitles: '', useWrapperFileDirectly: true])
             }
         }
 
