@@ -1,9 +1,11 @@
 pipeline {
-    agent any
+    agent none
+
     environment {
         NETLIFY_SITE_ID = '0d97e93b-26d3-48ac-9ad2-ca7b79085fee'
         NETLIFY_AUTH_TOKEN = credentials('netlify-token')
     }
+
     stages {
         stage('Build') {
             agent {
@@ -14,120 +16,175 @@ pipeline {
             }
             steps {
                 sh '''
-                    ls -la
+                    set -e
+
                     node --version
                     npm --version
                     npm ci
                     npm run build
-                    ls -la
+
+                    test -f build/index.html
                 '''
             }
         }
 
-        stage('Tests')
-        {
-            parallel{
-                 stage('Unit Test') {
+        stage('Tests') {
+            parallel {
+                stage('Unit Test') {
+                    agent {
+                        docker {
+                            image 'node:22-alpine'
+                            reuseNode true
+                        }
+                    }
+                    steps {
+                        sh '''
+                            set -e
+                            npm test
+                        '''
+                    }
+                    post {
+                        always {
+                            junit allowEmptyResults: true, testResults: 'jest-results/junit.xml'
+                        }
+                    }
+                }
+
+                stage('E2E Test') {
+                    agent {
+                        docker {
+                            image 'mcr.microsoft.com/playwright:v1.62.0-noble'
+                            reuseNode true
+                        }
+                    }
+                    steps {
+                        sh '''
+                            set -e
+
+                            npm ci
+                            npx serve -s build > serve.log 2>&1 &
+                            SERVER_PID=$!
+
+                            trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+
+                            sleep 5
+                            npx playwright test --reporter=html
+                        '''
+                    }
+                    post {
+                        always {
+                            publishHTML([
+                                allowMissing: true,
+                                alwaysLinkToLastBuild: false,
+                                icon: '',
+                                keepAll: false,
+                                reportDir: 'playwright-report',
+                                reportFiles: 'index.html',
+                                reportName: 'Playwright HTML Report',
+                                reportTitles: '',
+                                useWrapperFileDirectly: true
+                            ])
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy staging') {
             agent {
                 docker {
                     image 'node:22-alpine'
                     reuseNode true
                 }
             }
-                steps {
-                    sh '''
-                            #test -f build/index.html
-                    npm test
-                    '''
-                }
-                 post {
-            always{
-                junit 'jest-results/junit.xml'
-            }
-        }
-
-        }
-
-        stage("E2E"){
-            agent{
-                docker{
-                    image 'mcr.microsoft.com/playwright:v1.62.0-noble'
-                    reuseNode true
-                }
-            }
-
             steps {
-                echo "check E2E"
                 sh '''
-                npm install serve
-                node_modules/.bin/serve -s build &
-                sleep 10
-                npx playwright test  --reporter=html
+                    set -e
+
+                    test -d build
+                    npm install --no-save netlify-cli
+
+                    echo "Deploying staging site: $NETLIFY_SITE_ID"
+
+                    node_modules/.bin/netlify deploy \
+                      --site="$NETLIFY_SITE_ID" \
+                      --auth="$NETLIFY_AUTH_TOKEN" \
+                      --dir=build \
+                      --no-build \
+                      --json > deploy-output.json
+
+                    node -e "console.log(JSON.parse(require('fs').readFileSync('deploy-output.json', 'utf8')).deploy_url)"
                 '''
             }
-             post {
-            always{
-                publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, icon: '', keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Playwright HTML Report', reportTitles: '', useWrapperFileDirectly: true])
+        }
+
+        stage('Approval') {
+            steps {
+                timeout(time: 15, unit: 'MINUTES') {
+                    input message: 'Do you wish to deploy to production?', ok: 'Yes, I am sure!'
+                }
             }
         }
 
-        }
+        stage('Deploy to prod') {
+            agent {
+                docker {
+                    image 'node:22-alpine'
+                    reuseNode true
+                }
+            }
+            steps {
+                sh '''
+                    set -e
 
+                    test -d build
+                    npm install --no-save netlify-cli
+
+                    echo "Deploying production site: $NETLIFY_SITE_ID"
+
+                    node_modules/.bin/netlify deploy \
+                      --site="$NETLIFY_SITE_ID" \
+                      --auth="$NETLIFY_AUTH_TOKEN" \
+                      --dir=build \
+                      --prod \
+                      --no-build
+                '''
             }
         }
 
-     stage('Deploy') {
-    agent {
-        docker {
-            image 'node:22-alpine'
-            reuseNode true
-        }
-    }
-    steps {
-        sh '''
-            npm install --no-save netlify-cli
-
-            node_modules/.bin/netlify --version
-            echo "Deploying to production. Site ID: $NETLIFY_SITE_ID"
-
-            node_modules/.bin/netlify deploy \
-              --site="$NETLIFY_SITE_ID" \
-              --auth="$NETLIFY_AUTH_TOKEN" \
-              --dir=build \
-              --prod \
-              --no-build
-        '''
-    }
-}
-    stage("Prod E2E"){
-            agent{
-                docker{
+        stage('Prod E2E') {
+            agent {
+                docker {
                     image 'mcr.microsoft.com/playwright:v1.62.0-noble'
                     reuseNode true
                 }
             }
-
-             environment {
+            environment {
                 CI_ENVIRONMENT_URL = 'https://resonant-platypus-d2e3db.netlify.app/'
             }
-
-
             steps {
-                echo "check Prod E2E"
                 sh '''
-                npx playwright test  --reporter=html
+                    set -e
+
+                    npm ci
+                    npx playwright test --reporter=html
                 '''
             }
-             post {
-            always{
-                publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, icon: '', keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Playwright Prod HTML Report', reportTitles: '', useWrapperFileDirectly: true])
+            post {
+                always {
+                    publishHTML([
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: false,
+                        icon: '',
+                        keepAll: false,
+                        reportDir: 'playwright-report',
+                        reportFiles: 'index.html',
+                        reportName: 'Playwright Prod HTML Report',
+                        reportTitles: '',
+                        useWrapperFileDirectly: true
+                    ])
+                }
             }
         }
-
-        }
-       
     }
-
-               
-    
 }
