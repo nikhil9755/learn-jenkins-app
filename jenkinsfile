@@ -73,7 +73,7 @@ pipeline {
         stage("E2E"){
             agent{
                 docker{
-                    image 'mcr.microsoft.com/playwright:v1.62.0-noble'
+                    image 'my-playwright'
                     reuseNode true
                 }
             }
@@ -81,8 +81,7 @@ pipeline {
             steps {
                 echo "check E2E"
                 sh '''
-                npm install serve
-                node_modules/.bin/serve -s build &
+                serve -s build &
                 sleep 10
                 npx playwright test  --reporter=html
                 '''
@@ -107,12 +106,12 @@ pipeline {
     }
     steps {
         sh '''
-            npm install --no-save netlify-cli
+            // npm install --no-save netlify-cli
 
-            node_modules/.bin/netlify --version
+            netlify --version
             echo "Deploying to production. Site ID: $NETLIFY_SITE_ID"
 
-            node_modules/.bin/netlify deploy \
+            netlify deploy \
               --site="$NETLIFY_SITE_ID" \
               --auth="$NETLIFY_AUTH_TOKEN" \
               --dir=build \
