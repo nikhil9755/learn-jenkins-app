@@ -100,12 +100,13 @@ pipeline {
      stage('Deploy') {
     agent {
         docker {
-            image 'node:22-alpine'
+            image 'my-playwright'
             reuseNode true
         }
     }
     steps {
         sh '''
+            node --version
             netlify --version
             echo "Deploying to production. Site ID: $NETLIFY_SITE_ID"
 
